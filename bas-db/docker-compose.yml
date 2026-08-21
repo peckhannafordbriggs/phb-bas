@@ -1,0 +1,35 @@
+# Local PostgreSQL for BAS development.
+#
+#   docker compose up -d      start it
+#   docker compose down       stop it, keep the data
+#   docker compose down -v    stop it and DELETE the data (use when a migration
+#                             is wrong and you want a clean slate)
+#
+# Plain Postgres, not the TimescaleDB image. At one building and roughly 17
+# million rows a year, Postgres does not notice the load, and adding an
+# extension we do not need yet is a dependency with no payoff. Switching later
+# is a one-line image change plus CREATE EXTENSION.
+
+services:
+  db:
+    image: postgres:17
+    container_name: bas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bas
+      POSTGRES_PASSWORD: bas_local_dev_only
+      POSTGRES_DB: bas
+      # Deterministic sorting and formatting regardless of the host machine.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - bas_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bas -d bas"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  bas_pgdata:

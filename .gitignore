@@ -1,0 +1,23 @@
+# Secrets. Never commit.
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime output
+logs/
+*.log
+
+# Superseded by collector check; kept locally, not published.
+niagara-probe/
+
+# Database dumps. These contain real data and are large.
+*.dump
+bas-backups/
+
+# One-off scaffolding, C:\dev hardcoded.
+Prepare_BasRepo.ps1

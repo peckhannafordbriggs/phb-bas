@@ -1,0 +1,229 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_BAS",
+      "label": "BAS PostgreSQL",
+      "description": "The bas database, connected as bas_readonly",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "BAS — Point Explorer",
+  "uid": "bas-point-explorer",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "tags": ["bas"],
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Building",
+        "description": "Filters the point list below. Defaults to all buildings.",
+        "type": "query",
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+        "query": "SELECT name AS __text, site_id AS __value FROM bas.site ORDER BY name",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": {}
+      },
+      {
+        "name": "point",
+        "label": "Point",
+        "type": "query",
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+        "query": "SELECT point_name || COALESCE(' (' || point_role || ')', '') AS __text, point_id AS __value FROM bas.v_point WHERE is_active AND site_id IN ($site) ORDER BY site_name, point_name",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Latest",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": { "defaults": { "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT value_num AS \"Latest\" FROM bas.reading WHERE point_id = $point AND value_num IS NOT NULL ORDER BY ts DESC LIMIT 1",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Average (selected range)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "fieldConfig": { "defaults": { "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(avg(value_num)::numeric, 2) AS \"Average\" FROM bas.reading WHERE point_id = $point AND $__timeFilter(ts)",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Range",
+      "gridPos": { "h": 4, "w": 5, "x": 8, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "fieldConfig": { "defaults": { "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(min(value_num)::numeric,2) AS \"Min\", round(max(value_num)::numeric,2) AS \"Max\" FROM bas.reading WHERE point_id = $point AND $__timeFilter(ts)",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Readings / null records",
+      "gridPos": { "h": 4, "w": 5, "x": 13, "y": 0 },
+      "description": "A null record means the station logged an entry with no value — a sensor fault or a real gap. That is NOT the same as a missing row, which means we never collected it.",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Readings\", count(*) FILTER (WHERE value_num IS NULL AND value_bool IS NULL AND value_str IS NULL) AS \"Nulls\" FROM bas.reading WHERE point_id = $point AND $__timeFilter(ts)",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Distinct values",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "description": "A live sensor produces many distinct values. A handful over hundreds of readings means it has stopped responding — this is the stuck-sensor signal, and it works regardless of units.",
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 4 },
+              { "color": "green", "value": 20 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT value_num) AS \"Distinct\" FROM bas.reading WHERE point_id = $point AND $__timeFilter(ts)",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Trend",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", value_num AS \"value\" FROM bas.reading WHERE point_id = $point AND $__timeFilter(ts) ORDER BY ts",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Known data gaps — periods we did not collect",
+      "description": "Do not read a gap as equipment being off. These are periods where we were not looking, usually because the station overwrote its buffer before we got there.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT gap_start AS \"From\", gap_end AS \"To\", cause AS \"Cause\", notes AS \"Notes\" FROM bas.data_gap WHERE point_id = $point ORDER BY gap_start DESC LIMIT 50",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_BAS}" }
+        }
+      ]
+    }
+  ]
+}

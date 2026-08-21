@@ -1,0 +1,445 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_BAS",
+      "label": "BAS PostgreSQL",
+      "description": "The bas database, connected as bas_readonly",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "BAS \u2014 Collection Health",
+  "uid": "bas-collection-health",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "tags": [
+    "bas"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Building",
+        "description": "Scopes every panel to one or more buildings. Defaults to all.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_BAS}"
+        },
+        "query": "SELECT name AS __text, site_id AS __value FROM bas.site ORDER BY name",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active points",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Points\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total readings",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Readings\" FROM bas.reading r JOIN bas.point p USING (point_id) JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Unclassified points",
+      "description": "Points with no point_role. These are invisible to every question phrased by what a point measures, and to most fault rules.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 9,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"Unclassified\" FROM bas.v_collection_health WHERE is_active AND point_role IS NULL AND site_id IN ($site)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Points at risk of data loss",
+      "description": "data_lost means the station overwrote records before we collected them \u2014 that data is gone permanently. roll_horizon_unknown means capacity has not been filled in from Workbench, so we cannot tell. Unknown is not the same as safe.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 14,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"At risk\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site) AND roll_risk IN ('data_lost','at_risk','roll_horizon_unknown','never_collected')",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Minutes since newest reading",
+      "description": "If this climbs well past your poll interval, the collector has stopped.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - max(r.ts))) / 60 AS \"Minutes\" FROM bas.reading r JOIN bas.point p USING (point_id) JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site)",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Per-point collection status",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT point_name AS \"Point\", site_name AS \"Site\", point_role AS \"Role\", unit AS \"Unit\", roll_risk AS \"Risk\", last_record_ts AS \"Last reading\", round(seconds_since_last_record/60.0) AS \"Mins ago\", roll_horizon_s/3600.0 AS \"Roll horizon (h)\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site) ORDER BY seconds_since_last_record DESC NULLS FIRST",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Records written per collector run",
+      "description": "Steady small numbers are healthy. A large spike usually means a backfill catching up after an outage.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ir.started_at AS \"time\", ir.records_written AS \"records\" FROM bas.ingest_run ir LEFT JOIN bas.station st USING (station_id) WHERE $__timeFilter(ir.started_at) AND (st.site_id IN ($site) OR st.site_id IS NULL) ORDER BY ir.started_at",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Recent collector runs",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ir.started_at AS \"Started\", ir.status AS \"Status\", ir.points_succeeded AS \"OK\", ir.points_attempted AS \"Tried\", ir.records_written AS \"Records\", ir.collector_host AS \"Host\" FROM bas.ingest_run ir LEFT JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site) OR st.site_id IS NULL ORDER BY ir.started_at DESC LIMIT 30",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Recorded data gaps \u2014 periods we did not collect",
+      "description": "roll_overwrite is the unrecoverable kind: the station destroyed the data before we reached it. Each one means the poll cadence was wrong for that point.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_BAS}"
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT p.display_name AS \"Point\", h.site_name AS \"Site\", g.gap_start AS \"From\", g.gap_end AS \"To\", round(EXTRACT(EPOCH FROM (g.gap_end - g.gap_start))/3600.0, 1) AS \"Hours lost\", g.cause AS \"Cause\" FROM bas.data_gap g JOIN bas.point p USING (point_id) JOIN bas.v_collection_health h USING (point_id) WHERE h.site_id IN ($site) ORDER BY g.gap_start DESC LIMIT 100",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_BAS}"
+          }
+        }
+      ]
+    }
+  ]
+}
