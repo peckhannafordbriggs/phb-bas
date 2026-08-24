@@ -2,8 +2,8 @@
   "__inputs": [
     {
       "name": "DS_BAS",
-      "label": "BAS PostgreSQL",
-      "description": "The bas database, connected as bas_readonly",
+      "label": "BAS PostgreSQL (phb_platform)",
+      "description": "The platform database (phb_platform), connected as bas_readonly_platform",
       "type": "datasource",
       "pluginId": "grafana-postgresql-datasource",
       "pluginName": "PostgreSQL"
@@ -19,7 +19,7 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "BAS \u2014 Collection Health",
+  "title": "BAS — Collection Health",
   "uid": "bas-collection-health",
   "schemaVersion": 39,
   "version": 1,
@@ -38,7 +38,7 @@
           "type": "grafana-postgresql-datasource",
           "uid": "${DS_BAS}"
         },
-        "query": "SELECT name AS __text, site_id AS __value FROM bas.site ORDER BY name",
+        "query": "SELECT name AS __text, site_id AS __value FROM bas_sites ORDER BY name",
         "refresh": 1,
         "sort": 1,
         "includeAll": true,
@@ -78,7 +78,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"Points\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site)",
+          "rawSql": "SELECT count(*) AS \"Points\" FROM bas_v_collection_health WHERE is_active AND site_id IN ($site)",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -116,7 +116,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"Readings\" FROM bas.reading r JOIN bas.point p USING (point_id) JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site)",
+          "rawSql": "SELECT count(*) AS \"Readings\" FROM bas_readings r JOIN bas_points p USING (point_id) JOIN bas_stations st USING (station_id) WHERE st.site_id IN ($site)",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -173,7 +173,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"Unclassified\" FROM bas.v_collection_health WHERE is_active AND point_role IS NULL AND site_id IN ($site)",
+          "rawSql": "SELECT count(*) AS \"Unclassified\" FROM bas_v_collection_health WHERE is_active AND point_role IS NULL AND site_id IN ($site)",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -185,7 +185,7 @@
       "id": 4,
       "type": "stat",
       "title": "Points at risk of data loss",
-      "description": "data_lost means the station overwrote records before we collected them \u2014 that data is gone permanently. roll_horizon_unknown means capacity has not been filled in from Workbench, so we cannot tell. Unknown is not the same as safe.",
+      "description": "data_lost means the station overwrote records before we collected them — that data is gone permanently. roll_horizon_unknown means capacity has not been filled in from Workbench, so we cannot tell. Unknown is not the same as safe.",
       "gridPos": {
         "h": 4,
         "w": 5,
@@ -230,7 +230,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"At risk\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site) AND roll_risk IN ('data_lost','at_risk','roll_horizon_unknown','never_collected')",
+          "rawSql": "SELECT count(*) AS \"At risk\" FROM bas_v_collection_health WHERE is_active AND site_id IN ($site) AND roll_risk IN ('data_lost','at_risk','roll_horizon_unknown','never_collected')",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -292,7 +292,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - max(r.ts))) / 60 AS \"Minutes\" FROM bas.reading r JOIN bas.point p USING (point_id) JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site)",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - max(r.ts))) / 60 AS \"Minutes\" FROM bas_readings r JOIN bas_points p USING (point_id) JOIN bas_stations st USING (station_id) WHERE st.site_id IN ($site)",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -322,7 +322,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT point_name AS \"Point\", site_name AS \"Site\", point_role AS \"Role\", unit AS \"Unit\", roll_risk AS \"Risk\", last_record_ts AS \"Last reading\", round(seconds_since_last_record/60.0) AS \"Mins ago\", roll_horizon_s/3600.0 AS \"Roll horizon (h)\" FROM bas.v_collection_health WHERE is_active AND site_id IN ($site) ORDER BY seconds_since_last_record DESC NULLS FIRST",
+          "rawSql": "SELECT point_name AS \"Point\", site_name AS \"Site\", point_role AS \"Role\", unit AS \"Unit\", roll_risk AS \"Risk\", last_record_ts AS \"Last reading\", round(seconds_since_last_record/60.0) AS \"Mins ago\", roll_horizon_s/3600.0 AS \"Roll horizon (h)\" FROM bas_v_collection_health WHERE is_active AND site_id IN ($site) ORDER BY seconds_since_last_record DESC NULLS FIRST",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -372,7 +372,7 @@
           "refId": "A",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ir.started_at AS \"time\", ir.records_written AS \"records\" FROM bas.ingest_run ir LEFT JOIN bas.station st USING (station_id) WHERE $__timeFilter(ir.started_at) AND (st.site_id IN ($site) OR st.site_id IS NULL) ORDER BY ir.started_at",
+          "rawSql": "SELECT ir.started_at AS \"time\", ir.records_written AS \"records\" FROM bas_ingest_runs ir LEFT JOIN bas_stations st USING (station_id) WHERE $__timeFilter(ir.started_at) AND (st.site_id IN ($site) OR st.site_id IS NULL) ORDER BY ir.started_at",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -402,7 +402,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ir.started_at AS \"Started\", ir.status AS \"Status\", ir.points_succeeded AS \"OK\", ir.points_attempted AS \"Tried\", ir.records_written AS \"Records\", ir.collector_host AS \"Host\" FROM bas.ingest_run ir LEFT JOIN bas.station st USING (station_id) WHERE st.site_id IN ($site) OR st.site_id IS NULL ORDER BY ir.started_at DESC LIMIT 30",
+          "rawSql": "SELECT ir.started_at AS \"Started\", ir.status AS \"Status\", ir.points_succeeded AS \"OK\", ir.points_attempted AS \"Tried\", ir.records_written AS \"Records\", ir.collector_host AS \"Host\" FROM bas_ingest_runs ir LEFT JOIN bas_stations st USING (station_id) WHERE $__timeFilter(ir.started_at) AND (st.site_id IN ($site) OR st.site_id IS NULL) ORDER BY ir.started_at DESC LIMIT 30",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"
@@ -413,7 +413,7 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Recorded data gaps \u2014 periods we did not collect",
+      "title": "Recorded data gaps — periods we did not collect",
       "description": "roll_overwrite is the unrecoverable kind: the station destroyed the data before we reached it. Each one means the poll cadence was wrong for that point.",
       "gridPos": {
         "h": 8,
@@ -433,7 +433,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT p.display_name AS \"Point\", h.site_name AS \"Site\", g.gap_start AS \"From\", g.gap_end AS \"To\", round(EXTRACT(EPOCH FROM (g.gap_end - g.gap_start))/3600.0, 1) AS \"Hours lost\", g.cause AS \"Cause\" FROM bas.data_gap g JOIN bas.point p USING (point_id) JOIN bas.v_collection_health h USING (point_id) WHERE h.site_id IN ($site) ORDER BY g.gap_start DESC LIMIT 100",
+          "rawSql": "SELECT p.display_name AS \"Point\", h.site_name AS \"Site\", g.gap_start AS \"From\", g.gap_end AS \"To\", round(EXTRACT(EPOCH FROM (g.gap_end - g.gap_start))/3600.0, 1) AS \"Hours lost\", g.cause AS \"Cause\" FROM bas_data_gaps g JOIN bas_points p USING (point_id) JOIN bas_v_collection_health h USING (point_id) WHERE h.site_id IN ($site) ORDER BY g.gap_start DESC LIMIT 100",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "${DS_BAS}"

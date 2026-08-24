@@ -26,15 +26,18 @@ pip install -r requirements.txt
 ### 2. Create the read-only database user
 
 ```powershell
-psql "postgresql://bas:bas_local_dev_only@localhost:5432/bas" -f setup_readonly_role.sql
+psql "postgresql://postgres:<superuser-password>@localhost:5432/phb_platform" `
+     -v pw=<a new password> -f setup_readonly_role_platform.sql
 ```
 
-This is the important step. It creates a database account that **physically cannot modify anything**. See *Why read-only matters* below.
+This is the important step. It creates a database account that **physically cannot modify anything**, and that also **cannot read the platform's own tables** — `phb_platform` holds `employees` and `audit_events` next to the building data, so the grant is table by table on `bas_*` rather than blanket on the schema. See *Why read-only matters* below.
+
+> The password is not in the repository and not in this file. It is passed in with `-v pw=` and then lives in two places only: the Grafana datasource and the Claude Desktop config. `setup_readonly_role.sql` (no `_platform`) is the *standalone* database's script and its committed password must not be reused here.
 
 ### 3. Test it before wiring up Claude
 
 ```powershell
-$env:BAS_READONLY_URL="postgresql://bas_readonly:bas_readonly_local@localhost:5432/bas"
+$env:BAS_READONLY_URL="postgresql://bas_readonly_platform:<that password>@localhost:5432/phb_platform"
 python test_tools.py
 ```
 
@@ -57,7 +60,7 @@ Paste this in. If the file already has content, merge the `bas` entry into the e
       "command": "python",
       "args": ["C:\\dev\\bas-mcp\\server.py"],
       "env": {
-        "BAS_READONLY_URL": "postgresql://bas_readonly:bas_readonly_local@localhost:5432/bas"
+        "BAS_READONLY_URL": "postgresql://bas_readonly_platform:<that password>@localhost:5432/phb_platform"
       }
     }
   }

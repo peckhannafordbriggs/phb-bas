@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["C:\\dev\\bas-mcp\\server.py"],
       "env": {
-        "BAS_READONLY_URL": "postgresql://bas_readonly:bas_readonly_local@localhost:5432/bas"
+        "BAS_READONLY_URL": "postgresql://bas_readonly_platform:REPLACE_WITH_THE_PASSWORD@localhost:5432/phb_platform"
       }
     }
   }

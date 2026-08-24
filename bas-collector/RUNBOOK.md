@@ -30,7 +30,8 @@ Building automation data lives on a Niagara controller (a JACE) that only keeps 
 | Account | Where | Purpose |
 |---|---|---|
 | `bas` / `bas_local_dev_only` | Postgres | Owns the schema, used by the collector to write |
-| `bas_readonly` / `bas_readonly_local` | Postgres | Grafana and Claude. Cannot write anything |
+| `bas_readonly_platform` / *(not recorded here)* | Postgres, `phb_platform` | Grafana and Claude. `SELECT` on `bas_*` only |
+| `bas_readonly` / `bas_readonly_local` | Postgres, **standalone `bas` only** | The pre-cutover role. Do not grant it on `phb_platform` |
 | `postgres` / *(not recorded — see Recovery)* | Postgres | Superuser. Needed to create roles |
 | `bas_collector` / *(set in Workbench)* | Niagara station | Read-only. Cannot change anything on the station |
 | `admin` | Grafana | Local only |
@@ -152,10 +153,14 @@ If it reports points as `at_risk`, either poll more often (`POLL_INTERVAL_S` in 
 Usually a new migration created a table or view that `bas_readonly` can't read yet.
 
 ```powershell
-psql "$dsn" -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO bas_readonly"
+psql "$dsn" -tAc "SELECT 'GRANT SELECT ON '||c.relname||' TO bas_readonly_platform;' FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','v','m','p') AND c.relname LIKE 'bas\_%'" | psql "$dsn"
 ```
 
-If it keeps happening, the default privileges are wrong — re-run `C:\dev\bas-mcp\setup_readonly_role.sql` as the `postgres` superuser.
+This is expected after any migration that adds a `bas_*` table or view:
+`setup_readonly_role_platform.sql` deliberately does not use
+`ALTER DEFAULT PRIVILEGES`, because that cannot be limited to `bas_*` and
+would grant the role every future platform table as well. Re-running the
+script as the `postgres` superuser is the intended fix.
 
 ### Claude Desktop can't see the BAS tools
 
@@ -168,7 +173,7 @@ If it keeps happening, the default privileges are wrong — re-run `C:\dev\bas-m
 
 ```powershell
 cd C:\dev\bas-mcp
-$env:BAS_READONLY_URL="postgresql://bas_readonly:bas_readonly_local@localhost:5432/bas"
+$env:BAS_READONLY_URL="postgresql://bas_readonly_platform:<password>@localhost:5432/phb_platform"
 python test_tools.py
 ```
 
@@ -299,8 +304,10 @@ reported ten missing tables.
 
 ## After cutover, Grafana and Claude are still reading the OLD database
 
-**Not fixed by this change, and it produces a misleading alarm rather than a
-silent one — which is lucky, but it still sends you to the wrong place.**
+**RESOLVED 24 August 2026.** Both were moved to the platform database in the
+same session. What follows is kept because it is what the symptom looks like if
+either one is ever pointed back, or if a second machine is set up from an old
+copy of these notes.
 
 The collector, the health check and the nightly backup all follow
 `DATABASE_URL` in `C:\dev\bas-collector\.env`. **Two things do not:**
@@ -316,27 +323,49 @@ Anyone following *Collection has stopped* above will find `python -m collector
 status` reporting healthy and disagree with the dashboard. **Believe the
 collector, then fix the readers.**
 
-To move them, both need a `bas_readonly` role on the platform database with
-`SELECT` on `public.bas_*`, and their connection strings updated:
+**How it was actually done**, and the two things the first draft of this
+section got wrong.
+
+The role is `bas_readonly_platform`, not `bas_readonly`, and it is created by
+`C:\dev\bas-mcp\setup_readonly_role_platform.sql`:
 
 ```powershell
-# On the platform database, as a superuser:
-psql "$dsn" -c "CREATE ROLE bas_readonly LOGIN PASSWORD 'bas_readonly_local'"
-psql "$dsn" -c "GRANT USAGE ON SCHEMA public TO bas_readonly"
-psql "$dsn" -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO bas_readonly"
+cd C:\dev\bas-mcp
+psql "$dsn" -v pw=<a new password> -f setup_readonly_role_platform.sql
 ```
 
-Note that this grants `SELECT` on **everything** in `public`, including
-`employees` and `audit_events`. Grafana and Claude only need the `bas_*` tables,
-so prefer granting those explicitly:
+**Wrong thing #1: reusing `bas_readonly`.** Postgres roles are cluster-wide, so
+there is one password per role name. `bas_readonly`'s password is
+`bas_readonly_local`, committed in `setup_readonly_role.sql` on purpose, and that
+file says in as many words never to reuse it. Granting that role on the platform
+database would hand a committed password read access to real building data.
+
+**Wrong thing #2: `GRANT SELECT ON ALL TABLES IN SCHEMA public`.** The standalone
+database had a schema of its own, so a blanket grant was precise. `phb_platform`
+keeps `bas_*` in `public` next to `employees`, `audit_events`, `module_grants`,
+`draft_locks` and `_prisma_migrations`. A dashboard role that can read the
+employee directory is not a read-only BAS role. The script grants table by table
+on names matching `bas\_%`, the same shape as the `bas_collector` role.
+
+**`ALTER DEFAULT PRIVILEGES` is deliberately NOT used**, which is the one real
+cost of this arrangement. Default privileges cannot be filtered by table name, so
+covering future `bas_*` tables automatically would also cover the next table
+Prisma creates, whatever it is. A new `bas_*` object is therefore invisible until
+the script is re-run — which shows up as a permissions error in a panel, not as
+silent wrong data.
+
+Verified after creation, and the refusals are the evidence:
 
 ```powershell
-psql "$dsn" -tAc "SELECT 'GRANT SELECT ON '||tablename||' TO bas_readonly;' FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'bas\_%'" | psql "$dsn"
-psql "$dsn" -tAc "SELECT 'GRANT SELECT ON '||viewname||' TO bas_readonly;'  FROM pg_views  WHERE schemaname='public' AND viewname  LIKE 'bas\_v\_%'" | psql "$dsn"
+$ro = "postgresql://bas_readonly_platform:<password>@localhost:5432/phb_platform"
+psql "$ro" -c "SELECT count(*) FROM bas_points"    # 7
+psql "$ro" -c "SELECT count(*) FROM employees"     # ERROR: permission denied
+psql "$ro" -c "SELECT count(*) FROM audit_events"  # ERROR: permission denied
 ```
 
-The dashboards' queries also use the old table names and will need the same
-mapping applied as *Which database is this?* describes.
+The dashboards' queries used the old table names too and were retargeted in the
+same session — 19 queries across both JSON files, each one executed against the
+platform database before being called done.
 
 ---
 

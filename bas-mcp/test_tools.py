@@ -59,24 +59,24 @@ def main() -> int:
 
     schema = s.describe_schema()
     check(f"describe_schema returns the annotated schema ({len(schema)} chars)",
-          "bas.reading" in schema and "bas.v_reading" in schema)
+          "bas_readings" in schema and "bas_v_reading" in schema)
     check("schema includes column documentation, not just names", "—" in schema)
 
     section("Read-only enforcement")
 
     for bad, label in [
-        ("DELETE FROM bas.reading", "DELETE"),
-        ("UPDATE bas.point SET unit='x'", "UPDATE"),
-        ("DROP TABLE bas.reading", "DROP"),
-        ("INSERT INTO bas.org (name) VALUES ('x')", "INSERT"),
-        ("TRUNCATE bas.reading", "TRUNCATE"),
-        ("SELECT 1; DELETE FROM bas.reading", "stacked statements"),
+        ("DELETE FROM bas_readings", "DELETE"),
+        ("UPDATE bas_points SET unit='x'", "UPDATE"),
+        ("DROP TABLE bas_readings", "DROP"),
+        ("INSERT INTO bas_orgs (name) VALUES ('x')", "INSERT"),
+        ("TRUNCATE bas_readings", "TRUNCATE"),
+        ("SELECT 1; DELETE FROM bas_readings", "stacked statements"),
         ("SET session_replication_role = 'replica'", "SET"),
     ]:
         out = s.run_sql(bad)
         check(f"{label} is refused", out.startswith("Rejected"), out[:120])
 
-    ok = s.run_sql("SELECT count(*) AS n FROM bas.reading")
+    ok = s.run_sql("SELECT count(*) AS n FROM bas_readings")
     check("a legitimate SELECT still works", "n" in ok and not ok.startswith("Rejected"), ok[:120])
 
     # The role-level guarantee, independent of the validator above.
@@ -85,20 +85,20 @@ def main() -> int:
         blocked = False
         try:
             with psycopg.connect(os.environ["BAS_READONLY_URL"], autocommit=True) as c:
-                c.execute("DELETE FROM bas.reading WHERE false")
+                c.execute("DELETE FROM bas_readings WHERE false")
         except psycopg.errors.InsufficientPrivilege:
             blocked = True
         except psycopg.errors.ReadOnlySqlTransaction:
             blocked = True
         check("the database role itself refuses writes, regardless of the validator", blocked,
-              "the role can write — run setup_readonly_role.sql and point BAS_READONLY_URL at it")
+              "the role can write — run setup_readonly_role_platform.sql and point BAS_READONLY_URL at it")
     else:
         print("  SKIP  role-level write test (BAS_READONLY_URL not set)")
 
     section("Trend data")
 
     pts = s._fetch(
-        "SELECT point_name FROM bas.v_point WHERE is_active ORDER BY point_name LIMIT 1")
+        "SELECT point_name FROM bas_v_point WHERE is_active ORDER BY point_name LIMIT 1")
     if not pts:
         print("  No active points — skipping data tools.")
     else:

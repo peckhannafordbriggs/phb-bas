@@ -16,7 +16,9 @@ winget install --id Grafana.Grafana -e
 
 It installs as a Windows service and starts automatically. Give it a minute, then open:
 
-**http://localhost:3000**
+**http://localhost:3001**
+
+> Port 3001, not Grafana's default 3000 - the platform's dev server is pinned to 3000.
 
 Default login is `admin` / `admin`. It'll make you change the password on first sign-in.
 
@@ -27,15 +29,19 @@ Default login is `admin` / `admin`. It'll make you change the password on first 
 | Field | Value |
 |---|---|
 | Host URL | `localhost:5432` |
-| Database name | `bas` |
-| Username | `bas_readonly` |
-| Password | `bas_readonly_local` |
+| Database name | `phb_platform` |
+| Username | `bas_readonly_platform` |
+| Password | *(the one passed to `setup_readonly_role_platform.sql`)* |
 | TLS/SSL Mode | `disable` |
 | Version | leave at default |
 
 Click **Save & test**. You want "Database Connection OK."
 
-**Use `bas_readonly`, not `bas`.** That account cannot write to anything, so no dashboard query — including one you write by hand at 5pm on a Friday — can damage data that has no other copy in existence.
+**Use `bas_readonly_platform`, not `postgres`.** That account cannot write to anything, so no dashboard query — including one you write by hand at 5pm on a Friday — can damage data that has no other copy in existence.
+
+**It also cannot read the platform's own tables.** `phb_platform` holds `employees`, `audit_events`, `module_grants` and `draft_locks` alongside the building data. This role is granted `SELECT` table by table on `bas_*` only, so a dashboard cannot reach the employee directory. Create it with `C:\dev\bas-mcp\setup_readonly_role_platform.sql`.
+
+> **Not `bas_readonly`, and not the `bas` database.** Both still exist — the standalone database is kept as a point-in-time snapshot — but the collector now writes to `phb_platform`. A datasource pointed at `bas` shows numbers frozen at the cutover and looks like a stalled collector.
 
 ### 3. Import the dashboards
 
@@ -82,7 +88,7 @@ If that happens, don't debug JSON. Build the panel by hand — **Add panel → P
 
 ```sql
 SELECT ts AS "time", value_num AS "value"
-FROM bas.reading
+FROM bas_readings
 WHERE point_id = $point AND $__timeFilter(ts)
 ORDER BY ts;
 ```
@@ -92,7 +98,7 @@ ORDER BY ts;
 ```sql
 SELECT point_name, point_role, unit, roll_risk, last_record_ts,
        round(seconds_since_last_record / 60.0) AS mins_ago
-FROM bas.v_collection_health
+FROM bas_v_collection_health
 WHERE is_active
 ORDER BY seconds_since_last_record DESC NULLS FIRST;
 ```
@@ -101,14 +107,14 @@ ORDER BY seconds_since_last_record DESC NULLS FIRST;
 
 ```sql
 SELECT EXTRACT(EPOCH FROM (now() - max(ts))) / 60 AS minutes_since_last_reading
-FROM bas.reading;
+FROM bas_readings;
 ```
 
 **Compare a measurement across all equipment of a type** *(time series)*
 
 ```sql
 SELECT ts AS "time", equipment_name AS metric, value_num AS "value"
-FROM bas.v_reading
+FROM bas_v_reading
 WHERE point_role = 'supply_air_temp' AND equip_type = 'ahu' AND $__timeFilter(ts)
 ORDER BY ts;
 ```
@@ -120,7 +126,7 @@ That last one is what `point_role` buys you — one query, every AHU, any buildi
 ```sql
 SELECT point_name || COALESCE(' (' || point_role || ')', '') AS __text,
        point_id AS __value
-FROM bas.v_point
+FROM bas_v_point
 WHERE is_active
 ORDER BY site_name, point_name;
 ```

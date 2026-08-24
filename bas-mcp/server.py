@@ -116,7 +116,7 @@ def list_points(site: str | None = None, role: str | None = None) -> str:
     sql = """
         SELECT point_name, point_role, unit, data_type,
                equipment_name, site_name, niagara_station_name
-        FROM bas.v_point
+        FROM bas_v_point
         WHERE is_active
     """
     params: list = []
@@ -156,8 +156,8 @@ def list_roles() -> str:
     rows = _fetch("""
         SELECT r.point_role, r.display_name, r.measurement, r.typical_unit,
                count(p.point_id) AS points_in_use
-        FROM bas.point_role r
-        LEFT JOIN bas.point p ON p.point_role = r.point_role AND p.is_active
+        FROM bas_point_roles r
+        LEFT JOIN bas_points p ON p.point_role = r.point_role AND p.is_active
         GROUP BY 1,2,3,4
         HAVING count(p.point_id) > 0
         ORDER BY 1
@@ -182,7 +182,7 @@ def describe_schema() -> str:
     """
     rows = _fetch("""
         SELECT object_name, object_type, column_name, data_type, column_description
-        FROM bas.v_data_dictionary
+        FROM bas_v_data_dictionary
         ORDER BY object_type DESC, object_name, column_name
     """)
     out: list[str] = []
@@ -190,7 +190,7 @@ def describe_schema() -> str:
     for r in rows:
         if r["object_name"] != current:
             current = r["object_name"]
-            out.append(f"\n## bas.{current}  ({r['object_type']})")
+            out.append(f"\n## {current}  ({r['object_type']})")
         desc = f"  — {r['column_description']}" if r["column_description"] else ""
         out.append(f"  {r['column_name']} : {r['data_type']}{desc}")
     return "\n".join(out)
@@ -225,7 +225,7 @@ def get_readings(point_name: str, hours: int = 24, max_buckets: int = 100) -> st
     start = end - timedelta(hours=hours)
 
     total = _fetch(
-        "SELECT count(*) AS n FROM bas.reading WHERE point_id=%s AND ts BETWEEN %s AND %s",
+        "SELECT count(*) AS n FROM bas_readings WHERE point_id=%s AND ts BETWEEN %s AND %s",
         (pt["point_id"], start, end),
     )[0]["n"]
 
@@ -239,7 +239,7 @@ def get_readings(point_name: str, hours: int = 24, max_buckets: int = 100) -> st
     if total <= max_buckets:
         rows = _fetch("""
             SELECT ts_local, value_num, value_bool, value_str, status
-            FROM bas.v_reading
+            FROM bas_v_reading
             WHERE point_id=%s AND ts BETWEEN %s AND %s
             ORDER BY ts
         """, (pt["point_id"], start, end))
@@ -254,10 +254,10 @@ def get_readings(point_name: str, hours: int = 24, max_buckets: int = 100) -> st
                round(min(r.value_num)::numeric, 2)  AS min,
                round(max(r.value_num)::numeric, 2)  AS max,
                count(*)                             AS n
-        FROM bas.reading r
-        JOIN bas.point p   ON p.point_id = r.point_id
-        JOIN bas.station st ON st.station_id = p.station_id
-        JOIN bas.site s     ON s.site_id = st.site_id
+        FROM bas_readings r
+        JOIN bas_points p   ON p.point_id = r.point_id
+        JOIN bas_stations st ON st.station_id = p.station_id
+        JOIN bas_sites s     ON s.site_id = st.site_id
         WHERE r.point_id = %s AND r.ts BETWEEN %s AND %s
         GROUP BY 1, s.timezone
         ORDER BY 1
@@ -300,7 +300,7 @@ def summarize_point(point_name: str, days: int = 7) -> str:
                round(stddev_samp(value_num)::numeric, 3)       AS stddev,
                min(ts)                                         AS first_reading,
                max(ts)                                         AS last_reading
-        FROM bas.reading WHERE point_id=%s AND ts >= %s
+        FROM bas_readings WHERE point_id=%s AND ts >= %s
     """, (pt["point_id"], start))[0]
 
     if not r["readings"]:
@@ -330,7 +330,7 @@ def summarize_point(point_name: str, days: int = 7) -> str:
         )
 
     gaps = _fetch("""
-        SELECT gap_start, gap_end, cause FROM bas.data_gap
+        SELECT gap_start, gap_end, cause FROM bas_data_gaps
         WHERE point_id=%s AND gap_end >= %s ORDER BY gap_start
     """, (pt["point_id"], start))
     if gaps:
@@ -370,9 +370,9 @@ def find_faults(days: int = 7) -> str:
                sp.measured_point_name,
                round(avg(m.value_num - s.value_num)::numeric, 1) AS avg_deviation,
                count(*) FILTER (WHERE abs(m.value_num - s.value_num) > 2) AS intervals_off
-        FROM bas.v_setpoint_pair sp
-        JOIN bas.v_reading m ON m.point_id = sp.measured_point_id
-        JOIN bas.v_reading s ON s.point_id = sp.setpoint_point_id AND s.ts = m.ts
+        FROM bas_v_setpoint_pair sp
+        JOIN bas_v_reading m ON m.point_id = sp.measured_point_id
+        JOIN bas_v_reading s ON s.point_id = sp.setpoint_point_id AND s.ts = m.ts
         WHERE m.ts >= %s
         GROUP BY 1,2
         HAVING count(*) FILTER (WHERE abs(m.value_num - s.value_num) > 2) > 0
@@ -386,9 +386,9 @@ def find_faults(days: int = 7) -> str:
     # 2. Commanded on, not running
     rows = _fetch("""
         SELECT cs.equipment_name, cs.command_point_name, count(*) AS intervals
-        FROM bas.v_command_status_pair cs
-        JOIN bas.v_reading c ON c.point_id = cs.command_point_id
-        JOIN bas.v_reading s ON s.point_id = cs.status_point_id AND s.ts = c.ts
+        FROM bas_v_command_status_pair cs
+        JOIN bas_v_reading c ON c.point_id = cs.command_point_id
+        JOIN bas_v_reading s ON s.point_id = cs.status_point_id AND s.ts = c.ts
         WHERE c.value_bool IS TRUE AND s.value_bool IS FALSE AND c.ts >= %s
         GROUP BY 1,2 ORDER BY 3 DESC
     """, (since,))
@@ -403,8 +403,8 @@ def find_faults(days: int = 7) -> str:
         SELECT clg.equipment_name, count(*) AS intervals,
                round(avg(clg.value_num)::numeric, 0) AS avg_cooling_pct,
                round(avg(htg.value_num)::numeric, 0) AS avg_heating_pct
-        FROM bas.v_reading clg
-        JOIN bas.v_reading htg
+        FROM bas_v_reading clg
+        JOIN bas_v_reading htg
           ON htg.equipment_id = clg.equipment_id AND htg.ts = clg.ts
          AND htg.point_role IN ('heating_valve_cmd','reheat_valve_cmd')
         WHERE clg.point_role = 'cooling_valve_cmd'
@@ -460,9 +460,9 @@ def find_faults(days: int = 7) -> str:
                        THEN 'frozen - value never changed at all'
                    ELSE 'barely moving - only a few distinct values'
                END AS evidence
-        FROM bas.reading r
-        JOIN bas.point p USING (point_id)
-        LEFT JOIN bas.point_role pr ON pr.point_role = p.point_role
+        FROM bas_readings r
+        JOIN bas_points p USING (point_id)
+        LEFT JOIN bas_point_roles pr ON pr.point_role = p.point_role
         WHERE r.ts >= %s
           AND r.value_num IS NOT NULL
           AND p.is_active
@@ -487,7 +487,7 @@ def find_faults(days: int = 7) -> str:
     # 5. Running while unoccupied
     rows = _fetch("""
         SELECT equipment_name, point_name, count(*) AS intervals
-        FROM bas.v_reading
+        FROM bas_v_reading
         WHERE point_role IN ('supply_fan_status','return_fan_status','exhaust_fan_status',
                              'pump_status','chiller_status','boiler_status')
           AND value_bool IS TRUE
@@ -502,9 +502,9 @@ def find_faults(days: int = 7) -> str:
 
     if not findings:
         classified = _fetch(
-            "SELECT count(*) AS n FROM bas.point WHERE is_active AND point_role IS NOT NULL"
+            "SELECT count(*) AS n FROM bas_points WHERE is_active AND point_role IS NOT NULL"
         )[0]["n"]
-        active = _fetch("SELECT count(*) AS n FROM bas.point WHERE is_active")[0]["n"]
+        active = _fetch("SELECT count(*) AS n FROM bas_points WHERE is_active")[0]["n"]
         msg = f"No faults detected in the last {days} days."
         if classified < active:
             msg += (
@@ -531,27 +531,27 @@ def collection_health() -> str:
     quiet point may mean the collector stopped, not that the equipment did.
     """
     counts = _fetch("""
-        SELECT (SELECT count(*) FROM bas.point WHERE is_active)  AS active_points,
-               (SELECT count(*) FROM bas.reading)                AS readings,
-               (SELECT count(*) FROM bas.point
+        SELECT (SELECT count(*) FROM bas_points WHERE is_active)  AS active_points,
+               (SELECT count(*) FROM bas_readings)                AS readings,
+               (SELECT count(*) FROM bas_points
                  WHERE is_active AND point_role IS NULL)         AS unclassified,
-               (SELECT count(*) FROM bas.data_gap)               AS gaps
+               (SELECT count(*) FROM bas_data_gaps)               AS gaps
     """)[0]
 
     risk = _fetch("""
-        SELECT roll_risk, count(*) AS points FROM bas.v_collection_health
+        SELECT roll_risk, count(*) AS points FROM bas_v_collection_health
         WHERE is_active GROUP BY 1 ORDER BY 2 DESC
     """)
     stale = _fetch("""
         SELECT point_name, last_record_ts, roll_risk,
                round(seconds_since_last_record / 3600.0, 1) AS hours_since
-        FROM bas.v_collection_health
+        FROM bas_v_collection_health
         WHERE is_active AND roll_risk IN ('data_lost','at_risk','never_collected')
         ORDER BY seconds_since_last_record DESC NULLS FIRST LIMIT 10
     """)
     runs = _fetch("""
         SELECT started_at, status, points_succeeded, points_attempted, records_written
-        FROM bas.ingest_run ORDER BY started_at DESC LIMIT 5
+        FROM bas_ingest_runs ORDER BY started_at DESC LIMIT 5
     """)
 
     out = [
@@ -589,7 +589,7 @@ def run_sql(query: str) -> str:
     Call describe_schema() first so you are querying documented columns rather
     than guessing from names.
 
-    Prefer the views over the base tables: bas.v_reading has equipment, site,
+    Prefer the views over the base tables: bas_v_reading has equipment, site,
     units and building-local time already joined on every row, which avoids the
     multi-table joins that are easy to get subtly wrong.
 
@@ -646,7 +646,7 @@ def _resolve_point(name: str) -> dict | str:
     """Find one point by fuzzy name, or explain what went wrong."""
     rows = _fetch("""
         SELECT point_id, point_name, point_role, unit, site_name
-        FROM bas.v_point
+        FROM bas_v_point
         WHERE is_active AND (point_name ILIKE %s OR niagara_history_name ILIKE %s)
         ORDER BY length(point_name) LIMIT 10
     """, (f"%{name}%", f"%{name}%"))
