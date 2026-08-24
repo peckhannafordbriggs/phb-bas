@@ -44,6 +44,49 @@ Set-Location $root
 
 function Say($msg, $colour = 'Gray') { Write-Host "  $msg" -ForegroundColor $colour }
 
+# --- Which layout is this database in? -------------------------------------
+# The same data lives under two sets of names. The standalone bas database uses
+# a 'bas' schema with singular names; the platform database uses 'public' with a
+# bas_ prefix and plural names. A dump taken before the cutover and a live
+# database after it can legitimately differ, so live and restored are detected
+# independently and each is queried with its own names. Comparing counts by
+# LOGICAL table keeps that transition window testable instead of reporting ten
+# missing tables.
+function Get-BasLayout($psqlExe, $connStr) {
+    $sql = "SELECT CASE " +
+           "WHEN to_regclass('public.bas_readings') IS NOT NULL THEN 'platform' " +
+           "WHEN to_regclass('bas.reading') IS NOT NULL THEN 'standalone' " +
+           "ELSE 'none' END"
+    $r = (& $psqlExe $connStr -tA -c $sql 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $r) { return 'unknown' }
+    return ([string]$r).Trim()
+}
+
+# Logical name -> physical name, per layout. bas_equipment is singular while the
+# rest are plural, which is why this is a table and not a rule.
+$PhysicalName = @{
+    'platform' = @{
+        'org' = 'public.bas_orgs'; 'site' = 'public.bas_sites'
+        'station' = 'public.bas_stations'; 'equipment' = 'public.bas_equipment'
+        'point' = 'public.bas_points'; 'reading' = 'public.bas_readings'
+        'sync_checkpoint' = 'public.bas_sync_checkpoints'
+        'ingest_run' = 'public.bas_ingest_runs'
+        'data_gap' = 'public.bas_data_gaps'
+        'point_role' = 'public.bas_point_roles'
+        'v_reading' = 'public.bas_v_reading'
+    }
+    'standalone' = @{
+        'org' = 'bas.org'; 'site' = 'bas.site'
+        'station' = 'bas.station'; 'equipment' = 'bas.equipment'
+        'point' = 'bas.point'; 'reading' = 'bas.reading'
+        'sync_checkpoint' = 'bas.sync_checkpoint'
+        'ingest_run' = 'bas.ingest_run'
+        'data_gap' = 'bas.data_gap'
+        'point_role' = 'bas.point_role'
+        'v_reading' = 'bas.v_reading'
+    }
+}
+
 # --- Find the backup -------------------------------------------------------
 if (-not $BackupFile) {
     $dir = $env:BAS_BACKUP_DIR
@@ -134,10 +177,28 @@ try {
     Write-Host ""
     Write-Host ("    {0,-22} {1,12} {2,12}   {3}" -f 'table', 'live', 'restored', '')
 
+    $liveLayout = Get-BasLayout $psql $dsn
+    $restLayout = Get-BasLayout $psql $scratchDsn
+    Say "Live database layout:     $liveLayout"
+    Say "Restored copy layout:     $restLayout"
+    if ($liveLayout -ne $restLayout) {
+        Say "Layouts differ - comparing by logical table. Expected only during cutover." 'Yellow'
+    }
+    foreach ($lay in @($liveLayout, $restLayout)) {
+        if (-not $PhysicalName.ContainsKey($lay)) {
+            Say "Unrecognised layout '$lay' - cannot verify this backup." 'Red'
+            $failed++
+        }
+    }
+    if ($failed) { exit 1 }
+    Write-Host ""
+
     foreach ($t in @('org','site','station','equipment','point','reading',
                      'sync_checkpoint','ingest_run','data_gap','point_role')) {
-        $live = (& $psql $dsn        -tA -c "SELECT count(*) FROM bas.$t" 2>$null) -as [int]
-        $rest = (& $psql $scratchDsn -tA -c "SELECT count(*) FROM bas.$t" 2>$null) -as [int]
+        $liveTable = $PhysicalName[$liveLayout][$t]
+        $restTable = $PhysicalName[$restLayout][$t]
+        $live = (& $psql $dsn        -tA -c "SELECT count(*) FROM $liveTable" 2>$null) -as [int]
+        $rest = (& $psql $scratchDsn -tA -c "SELECT count(*) FROM $restTable" 2>$null) -as [int]
 
         if ($null -eq $rest) {
             $verdict = 'MISSING'; $colour = 'Red'; $failed++
@@ -173,7 +234,13 @@ try {
 
     # --- Views work too? ----------------------------------------------------
     Write-Host ""
-    $views = (& $psql $scratchDsn -tA -c "SELECT count(*) FROM information_schema.views WHERE table_schema='bas'" 2>$null) -as [int]
+    if ($restLayout -eq 'platform') {
+        $viewSql = "SELECT count(*) FROM information_schema.views " +
+                   "WHERE table_schema='public' AND table_name LIKE 'bas_v_%'"
+    } else {
+        $viewSql = "SELECT count(*) FROM information_schema.views WHERE table_schema='bas'"
+    }
+    $views = (& $psql $scratchDsn -tA -c $viewSql 2>$null) -as [int]
     if ($views -ge 6) {
         Say "Views restored: $views" 'Green'
     } else {
@@ -181,7 +248,8 @@ try {
     }
 
     # A view that exists but does not run is not restored in any useful sense.
-    $probe = (& $psql $scratchDsn -tA -c "SELECT count(*) FROM bas.v_reading" 2>&1)
+    $probeView = $PhysicalName[$restLayout]['v_reading']
+    $probe = (& $psql $scratchDsn -tA -c "SELECT count(*) FROM $probeView" 2>&1)
     if ($LASTEXITCODE -eq 0) {
         Say "v_reading queryable in the restored copy" 'Green'
     } else {

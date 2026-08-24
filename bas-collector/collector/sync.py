@@ -53,7 +53,7 @@ def roll_horizon_verdict(point: PointRow, cfg: Config) -> tuple[str, str]:
             "unknown",
             f"capacity and/or collection interval are not recorded for "
             f"'{point.name}'. Read them from Workbench (History Ext Manager) or BQL "
-            f"and fill in bas.point.capacity and bas.point.collection_interval_s. "
+            f"and fill in public.bas_points.capacity and public.bas_points.collection_interval_s. "
             f"Until then we cannot know whether this schedule loses data.",
         )
 

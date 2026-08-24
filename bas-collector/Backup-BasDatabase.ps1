@@ -136,13 +136,36 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-foreach ($t in @('reading', 'point', 'site', 'sync_checkpoint')) {
-    if ($toc -notmatch "TABLE DATA bas $t") {
-        Write-Log "FAILED VERIFICATION: table '$t' is missing from the dump."
-        exit 1
+# The same data lives under two different names, and which one a dump uses
+# depends entirely on which database .env points at:
+#
+#   standalone bas database   TABLE DATA bas reading
+#   platform database         TABLE DATA public bas_readings
+#
+# The trailing \s matters: without it 'bas point' also matches 'bas point_link',
+# so a dump missing bas.point could pass. $toc is a single string (Out-String),
+# so \s also matches the newline when the table name ends the line.
+function Test-TocHasTables($toc, [string[]]$tables) {
+    foreach ($t in $tables) {
+        $pattern = [regex]::Escape("TABLE DATA $t") + '\s'
+        if ($toc -notmatch $pattern) { return $false }
     }
+    return $true
 }
-Write-Log "Verified: archive readable, core tables present"
+
+$standaloneTables = @('bas reading', 'bas point', 'bas site', 'bas sync_checkpoint')
+$platformTables   = @('public bas_readings', 'public bas_points',
+                      'public bas_sites', 'public bas_sync_checkpoints')
+
+if (Test-TocHasTables $toc $standaloneTables) {
+    $layout = 'standalone bas schema'
+} elseif (Test-TocHasTables $toc $platformTables) {
+    $layout = 'platform public.bas_* tables'
+} else {
+    Write-Log "FAILED VERIFICATION: the dump has neither the standalone bas schema nor the platform bas_* tables. Core tables are missing."
+    exit 1
+}
+Write-Log "Verified: archive readable, core tables present ($layout)"
 
 # --- Rotate ----------------------------------------------------------------
 # Keep the last N days, plus anything dated the 1st of a month. That way

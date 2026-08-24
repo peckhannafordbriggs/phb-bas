@@ -85,14 +85,14 @@ def check(dsn: str) -> tuple[int, list[dict]]:
             SELECT started_at, finished_at, status, points_succeeded, points_attempted,
                    records_written,
                    EXTRACT(EPOCH FROM (now() - started_at))::bigint AS age_s
-            FROM bas.ingest_run
+            FROM public.bas_ingest_runs
             WHERE status IN ('ok','partial')
             ORDER BY started_at DESC LIMIT 1
         """).fetchone()
 
         if run is None:
             add(CRITICAL, "The collector has never completed a run",
-                "No successful entry in bas.ingest_run. Collection has never worked, or the "
+                "No successful entry in public.bas_ingest_runs. Collection has never worked, or the "
                 "audit table was cleared.")
         else:
             age = run["age_s"]
@@ -116,7 +116,7 @@ def check(dsn: str) -> tuple[int, list[dict]]:
         risk = conn.execute("""
             SELECT roll_risk, count(*) AS points,
                    min(point_name) AS example
-            FROM bas.v_collection_health
+            FROM public.bas_v_collection_health
             WHERE is_active GROUP BY 1
         """).fetchall()
         by_risk = {r["roll_risk"]: r for r in risk}
@@ -126,7 +126,7 @@ def check(dsn: str) -> tuple[int, list[dict]]:
                 f"DATA ALREADY LOST on {lost['points']} point(s)",
                 f"The station overwrote records before we collected them. This is permanent - "
                 f"Niagara keeps no other copy. e.g. {lost['example']}. "
-                f"See bas.data_gap for exactly what is missing.")
+                f"See public.bas_data_gaps for exactly what is missing.")
 
         if at_risk := by_risk.get("at_risk"):
             add(CRITICAL,
@@ -149,7 +149,7 @@ def check(dsn: str) -> tuple[int, list[dict]]:
         failing = conn.execute("""
             SELECT count(*) AS n, min(point_id) AS example_id,
                    max(consecutive_failures) AS worst, min(last_error) AS sample_error
-            FROM bas.sync_checkpoint WHERE consecutive_failures >= 3
+            FROM public.bas_sync_checkpoints WHERE consecutive_failures >= 3
         """).fetchone()
         if failing and failing["n"]:
             add(WARNING,
@@ -160,13 +160,13 @@ def check(dsn: str) -> tuple[int, list[dict]]:
         # -- 4. New gaps recorded ------------------------------------------
         gaps = conn.execute("""
             SELECT count(*) AS n, sum(EXTRACT(EPOCH FROM (gap_end - gap_start)))::bigint AS total_s
-            FROM bas.data_gap WHERE detected_at > now() - interval '24 hours'
+            FROM public.bas_data_gaps WHERE detected_at > now() - interval '24 hours'
         """).fetchone()
         if gaps and gaps["n"]:
             hours = (gaps["total_s"] or 0) / 3600
             add(CRITICAL, f"{gaps['n']} new data gap(s) recorded in the last 24 hours",
                 f"Roughly {hours:.1f} hours of building history was not collected and cannot be "
-                f"recovered. Query bas.data_gap for details.")
+                f"recovered. Query public.bas_data_gaps for details.")
 
     return worst, findings
 

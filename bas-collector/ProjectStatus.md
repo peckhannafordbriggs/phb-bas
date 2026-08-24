@@ -71,7 +71,7 @@ Getting there took four steps, none predictable from documentation:
 
 **Now verified (previously UNVERIFIED): the oBIX servlet does not serve until an ObixNetwork component exists in the station.** Community guidance was right; Tridium's docs are silent.
 
-**The correctness anchor passed.** Records in `bas.reading` were compared against the same history in Workbench over the same window — timestamps and values match exactly.
+**The correctness anchor passed.** Records in `public.bas_readings` were compared against the same history in Workbench over the same window — timestamps and values match exactly.
 
 ---
 
@@ -123,7 +123,7 @@ Instead: **one station as central collector**, other JACEs importing histories t
 
 Adding a building becomes: a read-only user, a NiagaraNetwork connection, one config entry.
 
-**Hard ceiling:** the lab JACE caps at 1,250 points / 26 devices — realistically **two or three buildings**. Beyond that needs a proper **Niagara Supervisor** (a purchase and a server). Nothing built now is wasted: to the collector a Supervisor is just a station serving oBIX. Change `bas.station.base_url`, re-run `discover`.
+**Hard ceiling:** the lab JACE caps at 1,250 points / 26 devices — realistically **two or three buildings**. Beyond that needs a proper **Niagara Supervisor** (a purchase and a server). Nothing built now is wasted: to the collector a Supervisor is just a station serving oBIX. Change `public.bas_stations.base_url`, re-run `discover`.
 
 **Switching a station's route later is one field.** Imported histories land under the *source* station's name, so the same `(station, history_name)` identity works via either route — same `point_id`, history continues, no split.
 

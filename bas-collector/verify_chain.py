@@ -81,21 +81,21 @@ def cleanup(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(
             """
-            DELETE FROM bas.ingest_run WHERE station_id IN (
-                SELECT station_id FROM bas.station WHERE site_id IN (
-                    SELECT site_id FROM bas.site WHERE name = %s))
+            DELETE FROM public.bas_ingest_runs WHERE station_id IN (
+                SELECT station_id FROM public.bas_stations WHERE site_id IN (
+                    SELECT site_id FROM public.bas_sites WHERE name = %s))
             """, (SITE,))
         conn.execute(
             """
-            DELETE FROM bas.point WHERE station_id IN (
-                SELECT station_id FROM bas.station WHERE site_id IN (
-                    SELECT site_id FROM bas.site WHERE name = %s))
+            DELETE FROM public.bas_points WHERE station_id IN (
+                SELECT station_id FROM public.bas_stations WHERE site_id IN (
+                    SELECT site_id FROM public.bas_sites WHERE name = %s))
             """, (SITE,))
         conn.execute(
-            "DELETE FROM bas.station WHERE site_id IN "
-            "(SELECT site_id FROM bas.site WHERE name = %s)", (SITE,))
-        conn.execute("DELETE FROM bas.site WHERE name = %s", (SITE,))
-        conn.execute("DELETE FROM bas.org WHERE name = %s", (ORG,))
+            "DELETE FROM public.bas_stations WHERE site_id IN "
+            "(SELECT site_id FROM public.bas_sites WHERE name = %s)", (SITE,))
+        conn.execute("DELETE FROM public.bas_sites WHERE name = %s", (SITE,))
+        conn.execute("DELETE FROM public.bas_orgs WHERE name = %s", (ORG,))
 
 
 def main() -> int:
@@ -160,18 +160,18 @@ def run_checks(dsn: str) -> None:
           summary["created"] == 8, f"got {summary['created']}")
 
     verbatim = one(
-        "SELECT count(*) FROM bas.point WHERE niagara_history_name LIKE '%%$2d%%'")
+        "SELECT count(*) FROM public.bas_points WHERE niagara_history_name LIKE '%%$2d%%'")
     check("stores $-escaped names verbatim (needed for the URL)", verbatim >= 1)
 
     units = one("""
-        SELECT count(*) FROM bas.point p JOIN bas.station s USING (station_id)
+        SELECT count(*) FROM public.bas_points p JOIN public.bas_stations s USING (station_id)
         WHERE p.unit IS NOT NULL""")
     check(f"captured units at ingest from the #RecordDef prototype ({units} points)",
           units >= 5)
 
     types = q("""
-        SELECT DISTINCT data_type FROM bas.point p JOIN bas.station s USING (station_id)
-        JOIN bas.site si USING (site_id) WHERE si.name = %s""", (SITE,))
+        SELECT DISTINCT data_type FROM public.bas_points p JOIN public.bas_stations s USING (station_id)
+        JOIN public.bas_sites si USING (site_id) WHERE si.name = %s""", (SITE,))
     kinds = {r["data_type"] for r in types}
     check("captured value datatypes, including bool", "bool" in kinds and "real" in kinds,
           f"got {kinds}")
@@ -183,7 +183,7 @@ def run_checks(dsn: str) -> None:
     # Scope every sync below to this test's own station, so the results are not
     # polluted by any real points already in the database.
     station_id = one("""
-        SELECT station_id FROM bas.station st JOIN bas.site s USING (site_id)
+        SELECT station_id FROM public.bas_stations st JOIN public.bas_sites s USING (site_id)
         WHERE s.name = %s LIMIT 1""", (SITE,))
     check("test station registered and isolatable", station_id is not None)
 
@@ -195,24 +195,24 @@ def run_checks(dsn: str) -> None:
     check(f"first pass wrote records ({result['written']:,})", result["written"] > 1000)
     check("all points succeeded", result["failed"] == 0, f"{result['failed']} failed")
 
-    after_first = one("SELECT count(*) FROM bas.reading")
+    after_first = one("SELECT count(*) FROM public.bas_readings")
 
     nulls = one("""
-        SELECT count(*) FROM bas.reading r JOIN bas.point p USING (point_id)
-        JOIN bas.station s USING (station_id) JOIN bas.site si USING (site_id)
+        SELECT count(*) FROM public.bas_readings r JOIN public.bas_points p USING (point_id)
+        JOIN public.bas_stations s USING (station_id) JOIN public.bas_sites si USING (site_id)
         WHERE si.name = %s AND r.value_num IS NULL AND r.value_bool IS NULL
           AND r.value_str IS NULL""", (SITE,))
     check(f"null RECORDS stored as rows, not dropped ({nulls} of them)", nulls > 0,
           "a null record means the sensor was down; dropping it would look like a gap")
 
     status_kept = one("""
-        SELECT count(*) FROM bas.reading r JOIN bas.point p USING (point_id)
-        JOIN bas.station s USING (station_id) JOIN bas.site si USING (site_id)
+        SELECT count(*) FROM public.bas_readings r JOIN public.bas_points p USING (point_id)
+        JOIN public.bas_stations s USING (station_id) JOIN public.bas_sites si USING (site_id)
         WHERE si.name = %s AND r.status IS NOT NULL""", (SITE,))
     check("Niagara status flags preserved", status_kept > 0)
 
     tz_ok = one("""
-        SELECT count(*) FROM bas.v_reading v JOIN bas.site s ON s.name = v.site_name
+        SELECT count(*) FROM public.bas_v_reading v JOIN public.bas_sites s ON s.name = v.site_name
         WHERE v.site_name = %s AND v.ts_local IS NOT NULL""", (SITE,))
     check("readings expose building-local time for occupancy analysis", tz_ok > 0)
 
@@ -225,7 +225,7 @@ def run_checks(dsn: str) -> None:
           f"{incremental['requests']} vs {result['requests']}")
 
     scratch = sync(client, repo, cfg_open, station_id=station_id, from_scratch=True)
-    after_refetch = one("SELECT count(*) FROM bas.reading")
+    after_refetch = one("SELECT count(*) FROM public.bas_readings")
     delta = after_refetch - after_first
     check(f"re-fetching EVERYTHING creates no duplicates (delta {delta})",
           delta <= 20, f"{delta} unexpected rows — only new real records should appear")
@@ -236,13 +236,13 @@ def run_checks(dsn: str) -> None:
     section("The roll-horizon guard")
 
     conn.execute("""
-        UPDATE bas.point SET capacity = 20, collection_interval_s = 60, full_policy = 'roll'
-        WHERE station_id IN (SELECT station_id FROM bas.station WHERE site_id IN
-              (SELECT site_id FROM bas.site WHERE name = %s))""", (SITE,))
+        UPDATE public.bas_points SET capacity = 20, collection_interval_s = 60, full_policy = 'roll'
+        WHERE station_id IN (SELECT station_id FROM public.bas_stations WHERE site_id IN
+              (SELECT site_id FROM public.bas_sites WHERE name = %s))""", (SITE,))
 
     horizon = one("""
-        SELECT roll_horizon_s FROM bas.point p JOIN bas.station s USING (station_id)
-        JOIN bas.site si USING (site_id) WHERE si.name = %s LIMIT 1""", (SITE,))
+        SELECT roll_horizon_s FROM public.bas_points p JOIN public.bas_stations s USING (station_id)
+        JOIN public.bas_sites si USING (site_id) WHERE si.name = %s LIMIT 1""", (SITE,))
     check("roll horizon computed from capacity x interval (20 x 60 = 1200)",
           horizon == 1200, f"got {horizon}")
 
@@ -265,19 +265,19 @@ def run_checks(dsn: str) -> None:
     section("Data loss is recorded, not hidden")
 
     conn.execute("""
-        UPDATE bas.sync_checkpoint SET last_record_ts = now() - interval '10 days'
-        WHERE point_id IN (SELECT point_id FROM bas.point p
-             JOIN bas.station s USING (station_id) JOIN bas.site si USING (site_id)
+        UPDATE public.bas_sync_checkpoints SET last_record_ts = now() - interval '10 days'
+        WHERE point_id IN (SELECT point_id FROM public.bas_points p
+             JOIN public.bas_stations s USING (station_id) JOIN public.bas_sites si USING (site_id)
              WHERE si.name = %s)""", (SITE,))
 
-    before_gaps = one("SELECT count(*) FROM bas.data_gap")
+    before_gaps = one("SELECT count(*) FROM public.bas_data_gaps")
     sync(client, repo, cfg_open, station_id=station_id)
-    after_gaps = one("SELECT count(*) FROM bas.data_gap")
+    after_gaps = one("SELECT count(*) FROM public.bas_data_gaps")
     check(f"records a data_gap when the station overwrote records first "
           f"({after_gaps - before_gaps} recorded)", after_gaps > before_gaps,
           "an unrecorded gap is indistinguishable from equipment being off")
 
-    cause = one("SELECT cause FROM bas.data_gap ORDER BY gap_id DESC LIMIT 1")
+    cause = one("SELECT cause FROM public.bas_data_gaps ORDER BY gap_id DESC LIMIT 1")
     check("gap is labelled roll_overwrite — the unrecoverable kind",
           cause == "roll_overwrite", f"got {cause}")
 
@@ -286,22 +286,22 @@ def run_checks(dsn: str) -> None:
 
     dead = ObixClient(f"http://127.0.0.1:{PORT + 1}", "test", "test",
                       verify_tls=False, timeout_s=3.0)
-    before_cp = one("SELECT max(last_record_ts) FROM bas.sync_checkpoint")
+    before_cp = one("SELECT max(last_record_ts) FROM public.bas_sync_checkpoints")
     outcome = sync(dead, repo, cfg_open, station_id=station_id)
-    after_cp = one("SELECT max(last_record_ts) FROM bas.sync_checkpoint")
+    after_cp = one("SELECT max(last_record_ts) FROM public.bas_sync_checkpoints")
 
     check("a totally unreachable station does not crash the run", outcome["failed"] > 0)
     check("checkpoints DO NOT advance when collection fails", before_cp == after_cp,
           f"{before_cp} -> {after_cp}")
 
-    failures = one("SELECT max(consecutive_failures) FROM bas.sync_checkpoint")
+    failures = one("SELECT max(consecutive_failures) FROM public.bas_sync_checkpoints")
     check("consecutive failures counted for alerting", failures >= 1, f"got {failures}")
 
     recovered = sync(client, repo, cfg_open, station_id=station_id)
     check("recovers automatically when the station returns", recovered["failed"] == 0)
 
     still_erroring = one("""
-        SELECT count(*) FROM bas.sync_checkpoint c JOIN bas.point p USING (point_id)
+        SELECT count(*) FROM public.bas_sync_checkpoints c JOIN public.bas_points p USING (point_id)
         WHERE p.station_id = %s AND c.last_status <> 'ok'""", (station_id,))
     check("every checkpoint status returns to ok after recovery",
           still_erroring == 0,
@@ -322,11 +322,11 @@ def run_checks(dsn: str) -> None:
     # -------------------------------------------------------------------
     section("Audit trail")
 
-    runs = one("SELECT count(*) FROM bas.ingest_run")
-    check(f"every pass recorded in bas.ingest_run ({runs} runs)", runs >= 5)
+    runs = one("SELECT count(*) FROM public.bas_ingest_runs")
+    check(f"every pass recorded in public.bas_ingest_runs ({runs} runs)", runs >= 5)
 
     has_errors = one("""
-        SELECT count(*) FROM bas.ingest_run
+        SELECT count(*) FROM public.bas_ingest_runs
         WHERE status IN ('partial','failed') AND jsonb_array_length(errors) > 0""")
     check("failed runs record what actually went wrong", has_errors >= 1)
 

@@ -1,20 +1,26 @@
 # bas-collector
 
-Pulls trend history off a Niagara 4 station over oBIX and writes it into the `bas` PostgreSQL schema.
+Pulls trend history off a Niagara 4 station over oBIX and writes it into the platform database's `public.bas_*` tables.
 
 This is the middle piece:
 
 ```
-JACE  ──>  bas-collector  ──>  bas-db
+JACE  ──>  bas-collector  ──>  phb-platform database
 ```
 
-Read-only, by construction — not by discipline. Requires the `bas-db` migrations to have been applied first.
+Read-only, by construction — not by discipline. Requires the phb-platform Prisma
+migrations to have been applied first (they create the `bas_*` tables).
+
+The tables used to live in a standalone database, in a `bas` schema with singular
+names. They now live in `public` with a `bas_` prefix and plural names. The old
+database is retained as the rollback path — see RUNBOOK, *Which database is
+this?* for the full mapping.
 
 ---
 
 ## Setup
 
-You need `bas-db` already running with its migrations applied. Then:
+You need the phb-platform database running with its migrations applied. Then:
 
 ```powershell
 cd C:\dev\bas-collector
@@ -75,7 +81,7 @@ Then look at what landed:
 
 ```sql
 SELECT ts_local, point_name, value_num, unit
-FROM bas.v_reading ORDER BY ts DESC LIMIT 20;
+FROM public.bas_v_reading ORDER BY ts DESC LIMIT 20;
 ```
 
 ---
@@ -105,7 +111,7 @@ So the collector computes `capacity × collection_interval` per point and **refu
 **The catch: oBIX does not expose capacity or collection interval.** They live on the Niagara history *extension*, reachable only through Workbench's History Ext Manager or BQL. Until someone fills them in, the guard reports `roll_horizon_unknown` and says so loudly. **Unknown is never treated as safe.**
 
 ```sql
-UPDATE bas.point
+UPDATE public.bas_points
    SET capacity = 500, collection_interval_s = 900, full_policy = 'roll'
  WHERE niagara_history_name = 'AHU$2d1_SupplyAirTemp';
 ```
@@ -113,7 +119,7 @@ UPDATE bas.point
 To see what still needs filling in:
 
 ```sql
-SELECT point_name, roll_risk FROM bas.v_collection_health
+SELECT point_name, roll_risk FROM public.bas_v_collection_health
 WHERE roll_risk = 'roll_horizon_unknown';
 ```
 

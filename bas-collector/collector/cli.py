@@ -70,8 +70,12 @@ def cmd_check(cfg: Config) -> int:
     try:
         repo = Repository(cfg.database_url)
         if not repo.schema_present():
-            print("  FAIL  connected, but the bas schema is missing.")
-            print("        Run the migrations in the bas-db project first.")
+            print("  FAIL  connected, but the bas_* tables are missing.")
+            print("        This collector targets the platform database, where the tables")
+            print("        live in public with a bas_ prefix and are managed by Prisma.")
+            print("        Apply the phb-platform migrations first (npx prisma migrate deploy).")
+            print("        If this database instead has a 'bas' schema with singular names,")
+            print("        it is the old standalone database - see DATABASE_URL in .env.")
             ok = False
         else:
             c = repo.counts()
@@ -120,8 +124,8 @@ def cmd_discover(cfg: Config) -> int:
         print(f"Marked {len(summary['deactivated'])} point(s) inactive (no longer reported).")
     print()
     print("Next: capacity and collection interval are NOT available over oBIX. Read them")
-    print("from Workbench (History Ext Manager) and fill in bas.point.capacity and")
-    print("bas.point.collection_interval_s. Until then the roll-horizon guard cannot")
+    print("from Workbench (History Ext Manager) and fill in public.bas_points.capacity and")
+    print("public.bas_points.collection_interval_s. Until then the roll-horizon guard cannot")
     print("protect these points, and unknown is not the same as safe.")
     print()
     return 0
@@ -145,7 +149,7 @@ def cmd_sync(cfg: Config, from_scratch: bool, only: str | None) -> int:
           f"from {result.get('requests', 0)} requests")
     print(f"  {result['succeeded']}/{result['points']} points ok, status {result['status']}")
     if result.get("gaps"):
-        print(f"  {result['gaps']} point(s) had UNRECOVERABLE data loss — see bas.data_gap")
+        print(f"  {result['gaps']} point(s) had UNRECOVERABLE data loss — see public.bas_data_gaps")
     if result.get("unknown_horizon"):
         print(f"  {result['unknown_horizon']} point(s) have unknown roll horizon")
     print()
@@ -211,7 +215,7 @@ def cmd_status(cfg: Config) -> int:
         rows = repo.conn.execute(
             """
             SELECT roll_risk, count(*) AS n
-            FROM bas.v_collection_health
+            FROM public.bas_v_collection_health
             WHERE is_active GROUP BY 1 ORDER BY 2 DESC
             """
         ).fetchall()
@@ -232,7 +236,7 @@ def cmd_status(cfg: Config) -> int:
             """
             SELECT run_id, started_at, status, points_succeeded, points_attempted,
                    records_written
-            FROM bas.ingest_run ORDER BY started_at DESC LIMIT 5
+            FROM public.bas_ingest_runs ORDER BY started_at DESC LIMIT 5
             """
         ).fetchall()
         if runs:

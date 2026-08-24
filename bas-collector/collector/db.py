@@ -70,14 +70,14 @@ class Repository:
     def ensure_site(self, org_name: str, site_name: str, site_timezone: str) -> int:
         with self.transaction() as cur:
             cur.execute(
-                "INSERT INTO bas.org (name) VALUES (%s) "
+                "INSERT INTO public.bas_orgs (name) VALUES (%s) "
                 "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING org_id",
                 (org_name,),
             )
             org_id = cur.fetchone()["org_id"]
 
             cur.execute(
-                "INSERT INTO bas.site (org_id, name, timezone) VALUES (%s,%s,%s) "
+                "INSERT INTO public.bas_sites (org_id, name, timezone) VALUES (%s,%s,%s) "
                 "ON CONFLICT (org_id, name) DO UPDATE SET timezone = EXCLUDED.timezone "
                 "RETURNING site_id",
                 (org_id, site_name, site_timezone),
@@ -94,11 +94,11 @@ class Repository:
         with self.transaction() as cur:
             cur.execute(
                 """
-                INSERT INTO bas.station (site_id, niagara_station_name, base_url, niagara_version)
+                INSERT INTO public.bas_stations (site_id, niagara_station_name, base_url, niagara_version)
                 VALUES (%s,%s,%s,%s)
                 ON CONFLICT (site_id, niagara_station_name) DO UPDATE
-                  SET base_url        = COALESCE(EXCLUDED.base_url, bas.station.base_url),
-                      niagara_version = COALESCE(EXCLUDED.niagara_version, bas.station.niagara_version),
+                  SET base_url        = COALESCE(EXCLUDED.base_url, public.bas_stations.base_url),
+                      niagara_version = COALESCE(EXCLUDED.niagara_version, public.bas_stations.niagara_version),
                       last_seen_at    = now()
                 RETURNING station_id
                 """,
@@ -116,7 +116,7 @@ class Repository:
         """
         with self.transaction() as cur:
             cur.execute(
-                "SELECT point_id FROM bas.point "
+                "SELECT point_id FROM public.bas_points "
                 "WHERE station_id = %s AND niagara_history_name = %s",
                 (station_id, meta.name),
             )
@@ -124,16 +124,16 @@ class Repository:
 
             cur.execute(
                 """
-                INSERT INTO bas.point
+                INSERT INTO public.bas_points
                   (station_id, niagara_history_name, display_name, unit, data_type,
                    source_timezone, last_seen_at)
                 VALUES (%s,%s,%s,%s,%s,%s, now())
                 ON CONFLICT (station_id, niagara_history_name) DO UPDATE
-                  SET display_name    = COALESCE(EXCLUDED.display_name, bas.point.display_name),
-                      unit            = COALESCE(EXCLUDED.unit, bas.point.unit),
+                  SET display_name    = COALESCE(EXCLUDED.display_name, public.bas_points.display_name),
+                      unit            = COALESCE(EXCLUDED.unit, public.bas_points.unit),
                       data_type       = CASE WHEN EXCLUDED.data_type = 'unknown'
-                                             THEN bas.point.data_type ELSE EXCLUDED.data_type END,
-                      source_timezone = COALESCE(EXCLUDED.source_timezone, bas.point.source_timezone),
+                                             THEN public.bas_points.data_type ELSE EXCLUDED.data_type END,
+                      source_timezone = COALESCE(EXCLUDED.source_timezone, public.bas_points.source_timezone),
                       last_seen_at    = now(),
                       is_active       = true
                 RETURNING point_id
@@ -150,7 +150,7 @@ class Repository:
             point_id = cur.fetchone()["point_id"]
 
             cur.execute(
-                "INSERT INTO bas.sync_checkpoint (point_id) VALUES (%s) "
+                "INSERT INTO public.bas_sync_checkpoints (point_id) VALUES (%s) "
                 "ON CONFLICT (point_id) DO NOTHING",
                 (point_id,),
             )
@@ -167,7 +167,7 @@ class Repository:
         """
         with self.transaction() as cur:
             cur.execute(
-                "SELECT point_id, niagara_history_name FROM bas.point "
+                "SELECT point_id, niagara_history_name FROM public.bas_points "
                 "WHERE station_id = %s AND is_active",
                 (station_id,),
             )
@@ -178,7 +178,7 @@ class Repository:
             ]
             if gone:
                 cur.execute(
-                    "UPDATE bas.point SET is_active = false "
+                    "UPDATE public.bas_points SET is_active = false "
                     "WHERE station_id = %s AND niagara_history_name = ANY(%s)",
                     (station_id, gone),
                 )
@@ -192,9 +192,9 @@ class Repository:
                    st.niagara_station_name, p.point_role, p.unit, p.data_type,
                    p.collection_interval_s, p.capacity, p.roll_horizon_s,
                    c.last_record_ts, COALESCE(c.consecutive_failures, 0) AS consecutive_failures
-            FROM bas.point p
-            JOIN bas.station st ON st.station_id = p.station_id
-            LEFT JOIN bas.sync_checkpoint c ON c.point_id = p.point_id
+            FROM public.bas_points p
+            JOIN public.bas_stations st ON st.station_id = p.station_id
+            LEFT JOIN public.bas_sync_checkpoints c ON c.point_id = p.point_id
             WHERE p.is_active
         """
         params: tuple = ()
@@ -245,7 +245,7 @@ class Repository:
                         r.status,
                     ]
                 cur.execute(
-                    "INSERT INTO bas.reading "
+                    "INSERT INTO public.bas_readings "
                     "(point_id, ts, value_num, value_bool, value_str, status) "
                     f"VALUES {placeholders} "
                     "ON CONFLICT (point_id, ts) DO NOTHING RETURNING 1",
@@ -256,12 +256,12 @@ class Repository:
             if checkpoint_ts is not None:
                 cur.execute(
                     """
-                    INSERT INTO bas.sync_checkpoint
+                    INSERT INTO public.bas_sync_checkpoints
                       (point_id, last_record_ts, last_run_at, last_status, consecutive_failures)
                     VALUES (%s,%s, now(), 'ok', 0)
                     ON CONFLICT (point_id) DO UPDATE
                       SET last_record_ts = GREATEST(
-                              bas.sync_checkpoint.last_record_ts, EXCLUDED.last_record_ts),
+                              public.bas_sync_checkpoints.last_record_ts, EXCLUDED.last_record_ts),
                           last_run_at          = now(),
                           last_status          = 'ok',
                           consecutive_failures = 0,
@@ -288,7 +288,7 @@ class Repository:
         with self.transaction() as cur:
             cur.execute(
                 """
-                INSERT INTO bas.sync_checkpoint
+                INSERT INTO public.bas_sync_checkpoints
                   (point_id, last_run_at, last_status, consecutive_failures)
                 VALUES (%s, now(), 'ok', 0)
                 ON CONFLICT (point_id) DO UPDATE
@@ -304,13 +304,13 @@ class Repository:
         with self.transaction() as cur:
             cur.execute(
                 """
-                INSERT INTO bas.sync_checkpoint
+                INSERT INTO public.bas_sync_checkpoints
                   (point_id, last_run_at, last_status, consecutive_failures, last_error)
                 VALUES (%s, now(), 'error', 1, %s)
                 ON CONFLICT (point_id) DO UPDATE
                   SET last_run_at          = now(),
                       last_status          = 'error',
-                      consecutive_failures = bas.sync_checkpoint.consecutive_failures + 1,
+                      consecutive_failures = public.bas_sync_checkpoints.consecutive_failures + 1,
                       last_error           = EXCLUDED.last_error
                 """,
                 (point_id, error[:2000]),
@@ -331,7 +331,7 @@ class Repository:
             return
         with self.transaction() as cur:
             cur.execute(
-                "INSERT INTO bas.data_gap (point_id, gap_start, gap_end, cause, notes) "
+                "INSERT INTO public.bas_data_gaps (point_id, gap_start, gap_end, cause, notes) "
                 "VALUES (%s,%s,%s,%s,%s)",
                 (point_id, start, end, cause, notes),
             )
@@ -344,7 +344,7 @@ class Repository:
     ) -> int:
         with self.transaction() as cur:
             cur.execute(
-                "INSERT INTO bas.ingest_run "
+                "INSERT INTO public.bas_ingest_runs "
                 "(station_id, window_start, window_end, collector_host, collector_version) "
                 "VALUES (%s,%s,%s,%s,%s) RETURNING run_id",
                 (station_id, window_start, window_end, collector_host, version),
@@ -360,7 +360,7 @@ class Repository:
         with self.transaction() as cur:
             cur.execute(
                 """
-                UPDATE bas.ingest_run
+                UPDATE public.bas_ingest_runs
                    SET finished_at = now(), status = %s, points_attempted = %s,
                        points_succeeded = %s, records_written = %s, errors = %s
                  WHERE run_id = %s
@@ -372,17 +372,17 @@ class Repository:
 
     def schema_present(self) -> bool:
         row = self.conn.execute(
-            "SELECT to_regclass('bas.reading') IS NOT NULL AS present"
+            "SELECT to_regclass('public.bas_readings') IS NOT NULL AS present"
         ).fetchone()
         return bool(row and row["present"])
 
     def counts(self) -> dict:
         return self.conn.execute(
             """
-            SELECT (SELECT count(*) FROM bas.point WHERE is_active) AS active_points,
-                   (SELECT count(*) FROM bas.reading)               AS readings,
-                   (SELECT count(*) FROM bas.point
+            SELECT (SELECT count(*) FROM public.bas_points WHERE is_active) AS active_points,
+                   (SELECT count(*) FROM public.bas_readings)               AS readings,
+                   (SELECT count(*) FROM public.bas_points
                      WHERE point_role IS NULL AND is_active)        AS unclassified,
-                   (SELECT count(*) FROM bas.data_gap)              AS gaps
+                   (SELECT count(*) FROM public.bas_data_gaps)              AS gaps
             """
         ).fetchone()
